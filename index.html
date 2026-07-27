@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Material Runway — production material estimator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --ground:#EDF0F3; --panel:#FFFFFF; --ink:#12171D; --ink-2:#4A555F; --ink-3:#7C8996;
+  --rule:#D3D9DF; --rule-2:#E7EBEF; --hover:#F6F8FA;
+  --short:#C2410C; --short-bg:#FDECE2;
+  --watch:#8A5D06; --watch-bg:#FBF3DF;
+  --ok:#0E6E62; --ok-bg:#E3F1EE;
+  --grid:#DDE3E8; --railH:56px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:28px 28px;
+  color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%}
+.wrap{max-width:1280px;margin:0 auto;padding:0 20px 80px}
+.mono{font-family:'IBM Plex Mono',monospace}
+.lbl{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.hide{display:none !important}
+.only-mobile{display:none}
+
+/* ---------------- masthead ---------------- */
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;
+  border-bottom:2px solid var(--ink);padding:24px 0 13px}
+h1{font-family:'Archivo',sans-serif;font-weight:700;font-size:32px;letter-spacing:-.02em;margin:0;line-height:1}
+.sub{color:var(--ink-2);margin-top:6px;max-width:54ch}
+.stamp{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-2);border:1px solid var(--rule);
+  background:var(--panel);padding:7px 11px}
+.stamp b{font-weight:600;color:var(--ink)}
+
+/* ---------------- upload ---------------- */
+#drop{border:2px dashed var(--rule);background:var(--panel);padding:52px 22px;text-align:center;
+  transition:border-color .15s;margin-top:20px}
+#drop.hot{border-color:var(--ink)}
+#drop h2{font-family:'Archivo',sans-serif;font-size:20px;margin:0 0 8px}
+#drop p{color:var(--ink-2);margin:0 auto 18px;max-width:46ch}
+.tabs-need{display:inline-flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:6px}
+.tabs-need span{font-family:'IBM Plex Mono',monospace;font-size:11px;border:1px solid var(--rule);padding:4px 8px;color:var(--ink-3)}
+.link{text-decoration:underline;cursor:pointer;font-weight:600}
+
+/* ---------------- sticky rail ---------------- */
+.rail{position:sticky;top:0;z-index:40;background:var(--panel);border:1px solid var(--rule);
+  box-shadow:0 1px 0 rgba(18,23,29,.05)}
+.rail-in{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:11px 16px}
+.horizon{display:flex;align-items:center;gap:12px;flex:1;min-width:290px}
+.horizon-val{font-family:'Archivo',sans-serif;font-weight:700;font-size:24px;letter-spacing:-.02em;
+  min-width:100px;white-space:nowrap}
+.horizon-val small{font-size:13px;font-weight:500;color:var(--ink-3);margin-left:3px}
+input[type=range]{flex:1;min-width:110px;accent-color:var(--ink);height:24px}
+.presets{display:flex}
+.presets button{border-left-width:0}
+.presets button:first-child{border-left-width:1px}
+.rail-actions{display:flex;gap:8px;margin-left:auto}
+
+/* ---------------- buttons / inputs ---------------- */
+button{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  background:#fff;color:var(--ink);border:1px solid var(--rule);padding:9px 12px;cursor:pointer;border-radius:0;
+  min-height:38px}
+button:hover{background:var(--hover)}
+button[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+button.solid{background:var(--ink);color:#fff;border-color:var(--ink)}
+button.solid:hover{background:var(--ink);opacity:.86}
+input[type=number],input[type=search],select{font-family:'IBM Plex Mono',monospace;font-size:15px;color:var(--ink);
+  border:1px solid var(--rule);background:#fff;padding:9px 10px;border-radius:0;width:100%;min-height:40px}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+/* ---------------- drawer ---------------- */
+.drawer{border-top:1px solid var(--rule-2);padding:16px;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:18px;background:#FCFDFD}
+.ctl label{display:block;margin-bottom:6px}
+.ctl-row{display:flex;align-items:center;gap:8px}
+.ctl-row .unit{font-family:'IBM Plex Mono',monospace;color:var(--ink-3);font-size:13px}
+.hint{font-size:12px;color:var(--ink-3);margin-top:6px}
+
+/* ---------------- scoreboard ---------------- */
+.score{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));background:var(--panel);
+  border:1px solid var(--rule);border-top:0;margin-bottom:18px}
+.score>div{padding:13px 16px;border-right:1px solid var(--rule-2);border-bottom:1px solid var(--rule-2)}
+.score .v{font-family:'Archivo',sans-serif;font-size:28px;font-weight:700;line-height:1.15;letter-spacing:-.02em;margin-top:2px}
+.score .v small{font-size:15px;font-weight:500;color:var(--ink-3)}
+.score .note{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;margin-top:5px;color:var(--ink-3)}
+.v.short,.note.short{color:var(--short)} .v.watch,.note.watch{color:var(--watch)} .v.ok{color:var(--ok)}
+.v.name{font-family:'IBM Plex Sans',sans-serif;font-size:15px;font-weight:600;line-height:1.35;letter-spacing:0;margin-top:6px}
+
+/* ---------------- tabs ---------------- */
+nav.tabs{display:flex;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+nav.tabs button{background:transparent;border:0;border-bottom:2px solid transparent;padding:12px 16px;
+  font-size:12px;letter-spacing:.1em;color:var(--ink-3);min-height:44px}
+nav.tabs button:hover{background:transparent;color:var(--ink)}
+nav.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ink)}
+nav.tabs .count{font-size:10px;margin-left:6px;padding:2px 5px;background:var(--rule-2);color:var(--ink-2)}
+nav.tabs button[aria-selected=true] .count{background:var(--ink);color:#fff}
+
+.panel{background:var(--panel);border:1px solid var(--rule);border-top:0}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--rule-2)}
+.toolbar .grow{flex:1;min-width:160px;max-width:330px}
+.seg{display:flex;flex-wrap:wrap}
+.seg button{border-left-width:0}
+.seg button:first-child{border-left-width:1px}
+
+/* ---------------- table ---------------- */
+.scroller{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  text-align:right;padding:10px 12px;border-bottom:1px solid var(--rule);white-space:nowrap;
+  position:sticky;top:var(--railH);background:var(--panel);cursor:pointer;user-select:none;z-index:2}
+th:first-child,td:first-child{text-align:left}
+th[aria-sort=ascending]::after{content:" ↑";color:var(--ink)}
+th[aria-sort=descending]::after{content:" ↓";color:var(--ink)}
+td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--rule-2);
+  font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+td:first-child{font-family:'IBM Plex Sans',sans-serif;white-space:normal;min-width:210px}
+tbody tr.row{cursor:pointer}
+tbody tr.row:hover td{background:var(--hover)}
+tbody tr.open td{background:var(--hover)}
+.caret{display:inline-block;width:12px;color:var(--ink-3);font-family:'IBM Plex Mono',monospace}
+tr.open .caret{color:var(--ink)}
+.big{font-weight:600}
+.miss{color:var(--short);font-weight:600}
+.muted{color:var(--ink-3)}
+.tag{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 6px;display:inline-block;white-space:nowrap}
+.t-watch{background:var(--watch-bg);color:var(--watch)}
+.t-none{background:#EDF0F3;color:var(--ink-3)}
+.empty{text-align:center;padding:38px 20px;color:var(--ink-3);font-family:'IBM Plex Sans',sans-serif}
+.empty strong{display:block;color:var(--ink);font-family:'Archivo',sans-serif;font-size:15px;margin-bottom:4px}
+
+/* drill-down */
+tr.detail td{background:#FAFCFD;padding:0;border-bottom:1px solid var(--rule)}
+.detail-in{padding:14px 16px 16px 30px}
+.detail-in table{font-size:12px;width:auto;min-width:min(600px,100%)}
+.detail-in th{position:static;background:transparent;border-bottom:1px solid var(--rule-2);padding:6px 12px;cursor:default}
+.detail-in td{padding:6px 12px;border-bottom:0;background:transparent}
+.detail-in td:first-child{min-width:180px}
+
+/* runway */
+.runway{width:128px;height:10px;background:#EAEEF1;position:relative;display:inline-block;vertical-align:middle;
+  border:1px solid var(--rule-2)}
+.runway i{position:absolute;left:0;top:0;bottom:0;display:block}
+.runway u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.r-short{background:var(--short)} .r-watch{background:var(--watch)} .r-ok{background:var(--ok)}
+.rw-num{display:inline-block;width:54px;text-align:right;margin-left:8px}
+
+/* ---------------- mapping ---------------- */
+.map-row{display:grid;grid-template-columns:1.1fr 22px 1.2fr 100px;gap:12px;align-items:center;
+  padding:11px 16px;border-bottom:1px solid var(--rule-2)}
+.map-row:hover{background:var(--hover)}
+.map-row .arrow{text-align:center;color:var(--ink-3)}
+.conf{font-family:'IBM Plex Mono',monospace;font-size:11px;text-align:right}
+.conf.lo{color:var(--short)} .conf.mid{color:var(--watch)} .conf.hi{color:var(--ok)}
+.notice{background:#FCFDFD;border-bottom:1px solid var(--rule-2);padding:14px 16px;color:var(--ink-2);font-size:13px}
+.notice code{font-family:'IBM Plex Mono',monospace;font-size:12px;background:#EDF0F3;padding:1px 4px}
+.err{background:var(--short-bg);color:var(--short);border:1px solid var(--short);padding:14px 16px;margin-top:18px}
+footer{margin-top:24px;font-size:12px;color:var(--ink-3);border-top:1px solid var(--rule);padding-top:12px}
+footer code{background:var(--panel);padding:1px 4px;border:1px solid var(--rule-2)}
+
+/* ================= MOBILE: tables become cards ================= */
+@media (max-width:760px){
+  .wrap{padding:0 12px 70px}
+  header{padding:18px 0 12px}
+  h1{font-size:24px}
+  .sub{font-size:13px}
+  .only-mobile{display:block}
+  .no-mobile{display:none !important}
+
+  .rail{position:static}
+  .rail-in{padding:12px;gap:12px}
+  .horizon{min-width:100%;flex-wrap:wrap}
+  .horizon-val{min-width:auto;font-size:22px}
+  .horizon input[type=range]{order:3;flex-basis:100%;min-width:100%}
+  .presets{flex:1;justify-content:flex-end}
+  .presets button{flex:1;padding:9px 4px}
+  .rail-actions{margin-left:0;width:100%}
+  .rail-actions button{flex:1}
+
+  .score{grid-template-columns:1fr 1fr}
+  .score>div{padding:11px 12px}
+  .score .v{font-size:22px}
+  .score .v.name{font-size:13px}
+
+  nav.tabs button{flex:1;padding:12px 6px;font-size:11px;letter-spacing:.04em}
+  .toolbar{padding:12px;gap:8px}
+  .toolbar .grow{max-width:none;min-width:100%}
+  .seg{width:100%}
+  .seg button{flex:1;padding:9px 4px}
+
+  .scroller{overflow:visible}
+  #matTable,#prodTable{display:block}
+  #matTable thead,#prodTable thead{display:none}
+  #matTable tbody,#prodTable tbody{display:block}
+  #matTable tbody tr,#prodTable tbody tr{display:block;border-bottom:1px solid var(--rule);padding:12px 12px 10px}
+  #matTable tbody tr.open{background:var(--hover)}
+  #matTable td,#prodTable td{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+    padding:5px 0;border-bottom:0;text-align:right;white-space:normal;min-width:0}
+  #matTable td::before,#prodTable td::before{content:attr(data-label);font-family:'IBM Plex Mono',monospace;
+    font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);text-align:left;flex:0 0 auto}
+  #matTable td:first-child,#prodTable td:first-child{display:block;font-family:'IBM Plex Sans',sans-serif;
+    font-weight:600;font-size:14.5px;padding:0 0 8px;text-align:left}
+  #matTable td:first-child::before,#prodTable td:first-child::before{content:none}
+  #matTable td.card-miss{margin-top:8px;padding:9px 10px;background:var(--short-bg);border:1px solid var(--short)}
+  #matTable td.card-miss::before{color:var(--short);font-weight:600}
+  #matTable td.card-miss span{font-size:17px;font-weight:700;color:var(--short)}
+  #matTable td.card-ok{margin-top:8px;padding:9px 10px;background:var(--ok-bg)}
+  #matTable td.card-ok::before{color:var(--ok)}
+  #matTable td.card-ok span{color:var(--ok);font-weight:600}
+  #matTable tbody tr.detail{padding:0;background:#FAFCFD}
+  #matTable tr.detail td{display:block;padding:0}
+  #matTable tr.detail td::before{content:none}
+  .detail-in{padding:12px}
+  .detail-in table{display:block;min-width:0}
+  .detail-in thead{display:none}
+  .detail-in tbody{display:block}
+  .detail-in tbody tr{display:block;border:1px solid var(--rule-2);background:#fff;padding:9px 10px;margin-bottom:8px}
+  .detail-in td{display:flex;justify-content:space-between;padding:3px 0;text-align:right}
+  .detail-in td::before{content:attr(data-label);font-family:'IBM Plex Mono',monospace;font-size:10px;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);text-align:left}
+  .detail-in td:first-child{display:block;font-weight:600;min-width:0;padding-bottom:6px;text-align:left}
+  .detail-in td:first-child::before{content:none}
+  .runway{width:100px}
+  .rw-num{width:auto}
+
+  .map-row{grid-template-columns:1fr;gap:7px;padding:14px 12px}
+  .map-row .arrow{display:none}
+  .conf{text-align:left}
+  #drop{padding:36px 16px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none !important}}
+@media print{
+  body{background:#fff}
+  .rail,nav.tabs,.toolbar,#drop,footer,.score{display:none !important}
+  .panel{border:0}
+  th{position:static}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <h1>Material Runway</h1>
+    <div class="sub">Set how far ahead to plan and see how many pieces of each production material are missing.</div>
+  </div>
+  <div class="stamp" id="stamp">Loading…</div>
+</header>
+
+<div id="errbox"></div>
+
+<!-- ============ UPLOAD (fallback only) ============ -->
+<section id="uploadPanel" class="hide">
+  <div id="drop">
+    <h2>Drop an Excel file here</h2>
+    <p>Or <label class="link">choose a file<input type="file" id="file" accept=".xlsx,.xls,.xlsm" hidden></label>. It is read in your browser — nothing is uploaded anywhere.</p>
+    <div class="lbl">Tabs it looks for</div>
+    <div class="tabs-need"><span>production_stock</span><span>assign</span><span>stock_avarage</span></div>
+  </div>
+</section>
+
+<!-- ============ APP ============ -->
+<div id="app" class="hide">
+
+  <div class="rail">
+    <div class="rail-in">
+      <div class="horizon">
+        <div class="horizon-val" id="hVal">24 <small>months</small></div>
+        <input type="range" id="hRange" min="1" max="60" step="1" value="24" aria-label="Months to plan ahead">
+        <div class="presets">
+          <button data-m="6">6 mo</button><button data-m="12">1 yr</button>
+          <button data-m="24" aria-pressed="true">2 yr</button><button data-m="36">3 yr</button>
+        </div>
+      </div>
+      <div class="rail-actions">
+        <button id="assumpBtn" aria-expanded="false">Assumptions</button>
+        <button id="exportBtn" class="solid">Export Excel</button>
+        <button id="reload">Other file</button>
+      </div>
+    </div>
+    <div class="drawer hide" id="drawer">
+      <div class="ctl">
+        <label class="lbl" for="months">Months to plan ahead</label>
+        <div class="ctl-row"><input type="number" id="months" min="1" max="120" step="1" value="24" inputmode="numeric"><span class="unit">mo</span></div>
+        <div class="hint">Any value up to 120 months.</div>
+      </div>
+      <div class="ctl">
+        <label class="lbl" for="growth">Yearly demand growth</label>
+        <div class="ctl-row"><input type="number" id="growth" step="1" value="0" inputmode="numeric"><span class="unit">%</span></div>
+        <div class="hint">Compounds monthly. 0 holds today's average flat.</div>
+      </div>
+      <div class="ctl">
+        <label class="lbl" for="buffer">Wastage &amp; reject buffer</label>
+        <div class="ctl-row"><input type="number" id="buffer" step="1" value="0" inputmode="numeric"><span class="unit">%</span></div>
+        <div class="hint">Extra pieces on top of the forecast.</div>
+      </div>
+      <div class="ctl">
+        <label class="lbl" for="netoff">Finished goods on hand</label>
+        <select id="netoff">
+          <option value="1" selected>Subtract from what to produce</option>
+          <option value="0">Ignore — produce the full forecast</option>
+        </select>
+        <div class="hint">Uses the Quantity column in stock_avarage.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="score" id="score"></div>
+
+  <nav class="tabs" id="tabs" role="tablist">
+    <button role="tab" data-tab="mat" aria-selected="true">Materials <span class="count" id="cMat">0</span></button>
+    <button role="tab" data-tab="prod" aria-selected="false">Products <span class="count" id="cProd">0</span></button>
+    <button role="tab" data-tab="map" aria-selected="false">Matching <span class="count" id="cMap">0</span></button>
+  </nav>
+
+  <!-- MATERIALS -->
+  <section class="panel" id="tab-mat">
+    <div class="toolbar">
+      <input type="search" id="matSearch" class="grow" placeholder="Search materials…" aria-label="Search materials">
+      <div class="seg" id="matFilters">
+        <button data-f="short" aria-pressed="true">Missing</button>
+        <button data-f="all">All</button>
+        <button data-f="Others">Others</button>
+        <button data-f="Labels">Labels</button>
+      </div>
+      <select id="matSort" class="only-mobile" aria-label="Sort materials" style="max-width:100%">
+        <option value="shortage">Sort: most missing</option>
+        <option value="cover">Sort: shortest runway</option>
+        <option value="need">Sort: most needed</option>
+        <option value="stock">Sort: least in stock</option>
+        <option value="name">Sort: name</option>
+      </select>
+      <span class="lbl no-mobile" id="matNote" style="margin-left:auto"></span>
+    </div>
+    <div class="scroller"><table id="matTable"></table></div>
+    <div class="notice" style="border-top:1px solid var(--rule-2);border-bottom:0;font-size:12px">
+      Every figure is a piece count. <b>Missing</b> is how many extra pieces you must buy to cover the window. The runway bar shows how long stock lasts at today's usage — the mark is the end of your window. Tap a row for the products that consume it.
+    </div>
+  </section>
+
+  <!-- PRODUCTS -->
+  <section class="panel hide" id="tab-prod">
+    <div class="toolbar">
+      <input type="search" id="prodSearch" class="grow" placeholder="Search products…" aria-label="Search products">
+      <select id="prodSort" class="only-mobile" aria-label="Sort products" style="max-width:100%">
+        <option value="produce">Sort: most to produce</option>
+        <option value="avg">Sort: fastest selling</option>
+        <option value="onHand">Sort: most on hand</option>
+        <option value="name">Sort: name</option>
+      </select>
+      <span class="lbl no-mobile" id="prodNote" style="margin-left:auto"></span>
+    </div>
+    <div class="scroller"><table id="prodTable"></table></div>
+  </section>
+
+  <!-- MAPPING -->
+  <section class="panel hide" id="tab-map">
+    <div class="notice">
+      Product names are written differently in <code>assign</code> and <code>stock_avarage</code>, so each sales line was matched to a recipe automatically. Correct anything wrong here — the counts update straight away.
+    </div>
+    <div class="toolbar">
+      <input type="search" id="mapSearch" class="grow" placeholder="Search products…" aria-label="Search product matches">
+      <div class="seg" id="mapFilters">
+        <button data-f="all" aria-pressed="true">All</button>
+        <button data-f="check">Needs a look</button>
+        <button data-f="none">Unmatched</button>
+      </div>
+    </div>
+    <div id="mapList"></div>
+    <div class="notice" style="border-top:1px solid var(--rule-2);border-bottom:0">
+      <div class="lbl" style="margin-bottom:8px">Materials used in assign but absent from production_stock</div>
+      <div id="missingMats" class="mono" style="font-size:12px;color:var(--ink-2);line-height:1.9"></div>
+    </div>
+  </section>
+</div>
+
+<footer>Monthly demand comes from <code>average</code> in stock_avarage. Pieces needed = units to produce × <code>Quantity Per Main</code> in assign, rounded up. Stock on hand comes from <code>production_stock</code>.</footer>
+</div>
+
+<script>
+"use strict";
+
+/* ================================================================
+   EMBEDDED DATA
+   Replace null with your workbook data to skip the upload screen:
+   {stock:[["Item name",qty],…],
+    assign:[["Main Product","Category","Assigned Product",qtyPerMain],…],
+    products:[["Full name","Code",onHandQty,monthlyAverage,"Brand"],…]}
+   ================================================================ */
+const EMBEDDED = null;
+
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const cnt=n=>(!isFinite(n)?"∞":Math.round(n).toLocaleString());
+const up=n=>(!isFinite(n)?"∞":Math.ceil(n-1e-9).toLocaleString());
+const mo=n=>(!isFinite(n)?"∞":(Math.round(n*10)/10).toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1}));
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ============ name matching ============ */
+const STOP=new Set(["label","lable","herbal","biseka","l","ll","love","lab","and","the","bis","of"]);
+const BRANDS=["biseka","l l","love lab","love and lab","ll"];
+const base=s=>String(s==null?"":s).toLowerCase().replace(/[\u2013\u2014]/g,"-").replace(/[\u2019']/g,"");
+function sizes(s){const o=[],re=/(\d+(?:\.\d+)?)\s*(ml|kg|mg|g|l)\b/g;let m;
+  while((m=re.exec(base(s)))!==null)o.push(parseFloat(m[1])+m[2]);return o;}
+function tokens(s){
+  let x=base(s).replace(/&/g," ");
+  for(const b of BRANDS)x=x.replace(new RegExp("^"+b+"\\b"),"");
+  x=x.replace(/\d+(\.\d+)?\s*(ml|kg|mg|g|l)\b/g," ");
+  return new Set(x.split(/[^a-z0-9]+/).filter(w=>w&&!STOP.has(w)));
+}
+const squash=s=>base(s).replace(/[^a-z0-9]/g,"");
+function score(a,b){
+  const sa=sizes(a),sb=sizes(b);
+  if(sa.length&&sb.length&&sa.join()!==sb.join())return 0;
+  const ta=tokens(a),tb=tokens(b);
+  if(!ta.size||!tb.size)return 0;
+  let inter=0;ta.forEach(t=>{if(tb.has(t))inter++;});
+  let dice=2*inter/(ta.size+tb.size);
+  const ja=[...ta].sort().join(""),jb=[...tb].sort().join("");
+  if(!dice&&(ja.includes(jb)||jb.includes(ja)))dice=0.5;
+  const na=squash(a),nb=squash(b);
+  const bonus=(na.includes(nb)||nb.includes(na))?0.25:0;
+  const sz=(sa.length&&sb.length&&sa.join()===sb.join())?0.15:0;
+  return Math.min(1,dice+bonus+sz);
+}
+function autoMatch(mains,fulls){
+  const pairs=[];
+  for(const m of mains)for(const f of fulls){const s=score(m,f);if(s>=0.4)pairs.push([s,m,f]);}
+  pairs.sort((x,y)=>y[0]-x[0]);
+  const out={},um=new Set(),uf=new Set();
+  for(const [s,m,f] of pairs){
+    if(um.has(m)||uf.has(f))continue;
+    out[f]={main:m,score:s};um.add(m);uf.add(f);
+  }
+  return out;
+}
+
+/* ============ data loading ============ */
+const key=s=>String(s==null?"":s).toLowerCase().replace(/[^a-z0-9]/g,"");
+function pick(row,...names){
+  for(const n of names){const w=key(n);for(const k of Object.keys(row))if(key(k)===w)return row[k];}
+  for(const n of names){const w=key(n);for(const k of Object.keys(row))if(key(k).includes(w))return row[k];}
+}
+function sheet(wb,name){
+  const hit=wb.SheetNames.find(s=>key(s)===key(name))||wb.SheetNames.find(s=>key(s).includes(key(name)));
+  return hit?XLSX.utils.sheet_to_json(wb.Sheets[hit],{defval:null}):null;
+}
+const num=v=>{const n=parseFloat(String(v==null?"":v).replace(/[, ]/g,""));return isFinite(n)?n:0;};
+
+let DATA=null,MATCHES={},RESULT=null;
+let matFilter="short",mapFilter="all",openRows=new Set();
+let sortMat={k:"shortage",dir:-1},sortProd={k:"produce",dir:-1};
+
+function build(stockRows,assignRows,productRows){
+  const stock=new Map();
+  stockRows.forEach(([n,q])=>{
+    if(n==null||!String(n).trim())return;
+    const k=key(n);
+    stock.set(k,{name:String(n).trim(),qty:(stock.has(k)?stock.get(k).qty:0)+num(q)});});
+  const recipes=new Map();
+  assignRows.forEach(([main,cat,item,per])=>{
+    if(main==null||item==null||!String(main).trim()||!String(item).trim())return;
+    const m=String(main).trim();
+    if(!recipes.has(m))recipes.set(m,[]);
+    recipes.get(m).push({item:String(item).trim(),cat:String(cat||"Others").trim(),per:num(per)||1});});
+  const products=[];
+  productRows.forEach(([name,code,onHand,avg,brand])=>{
+    if(name==null||!String(name).trim())return;
+    products.push({name:String(name).trim(),code:String(code||"").trim(),
+      onHand:num(onHand),avg:num(avg),brand:String(brand||"").trim()});});
+  return {stock,recipes,products,mains:[...recipes.keys()]};
+}
+
+function parseWorkbook(wb){
+  const ps=sheet(wb,"production_stock"),as=sheet(wb,"assign"),
+        sa=sheet(wb,"stock_avarage")||sheet(wb,"stock_average");
+  const miss=[["production_stock",ps],["assign",as],["stock_avarage",sa]].filter(x=>!x[1]).map(x=>x[0]);
+  if(miss.length)throw new Error("Missing tab(s): "+miss.join(", ")+". This file has: "+wb.SheetNames.join(", "));
+  return build(
+    ps.map(r=>[pick(r,"Item Name","Item","Material","Name"),pick(r,"Quantity","Qty","Stock")]),
+    as.map(r=>[pick(r,"Main Product","Main"),pick(r,"Assigned Category","Category"),
+               pick(r,"Assigned Product","Assigned Item"),pick(r,"Quantity Per Main","Qty Per Main","Quantity Per")]),
+    sa.map(r=>[pick(r,"Full name","Full Name","Name","Product"),pick(r,"ItemCode","Code"),
+               pick(r,"Quantity","Qty"),pick(r,"average","avg","Average"),pick(r,"Brand")]));
+}
+
+function start(data,label){
+  DATA=data;
+  MATCHES=autoMatch(DATA.mains,DATA.products.map(p=>p.name));
+  openRows.clear();
+  $("#stamp").innerHTML=label+" \u00b7 "+DATA.products.length+" products \u00b7 "+DATA.stock.size+" materials";
+  $("#uploadPanel").classList.add("hide");
+  $("#app").classList.remove("hide");
+  compute();
+  syncRail();
+}
+
+/* ============ calculation ============ */
+function compute(){
+  const H=Math.max(1,Math.min(120,Math.round(num($("#months").value))||24));
+  const g=num($("#growth").value)/100,buf=num($("#buffer").value)/100,net=$("#netoff").value==="1";
+  const gm=Math.pow(1+g,1/12);
+  const factor=g===0?H:(Math.pow(gm,H)-1)/(gm-1);
+
+  const prods=DATA.products.map(p=>{
+    const hit=MATCHES[p.name];
+    const main=hit?hit.main:null;
+    const demand=p.avg*factor*(1+buf);
+    const produce=Math.max(0,demand-(net?p.onHand:0));
+    return Object.assign({},p,{main,demand,produce,
+      mapped:!!main&&DATA.recipes.has(main),conf:hit?hit.score:0,units:0});
+  });
+
+  const mats=new Map();
+  for(const p of prods){
+    if(!p.mapped)continue;
+    for(const line of DATA.recipes.get(p.main)){
+      const k=key(line.item);
+      if(!mats.has(k))mats.set(k,{name:line.item,cat:line.cat,rawNeed:0,burn:0,uses:[],
+        known:DATA.stock.has(k),rawStock:DATA.stock.has(k)?DATA.stock.get(k).qty:0});
+      const m=mats.get(k);
+      m.rawNeed+=p.produce*line.per;
+      m.burn+=p.avg*line.per;
+      m.uses.push({product:p.name,per:line.per,units:p.produce,sub:p.produce*line.per,monthly:p.avg*line.per});
+      if(line.cat)m.cat=line.cat;
+      p.units++;
+    }
+  }
+  const rows=[...mats.values()].map(m=>{
+    const need=Math.ceil(m.rawNeed-1e-9), stock=Math.round(m.rawStock);
+    const cover=m.burn>0?stock/m.burn:Infinity;
+    const shortage=Math.max(0,need-stock);
+    m.uses.sort((a,b)=>b.sub-a.sub);
+    return Object.assign({},m,{need,stock,cover,shortage,
+      status:shortage>0?"short":(cover<H*1.25?"watch":"ok")});
+  });
+  RESULT={H,rows,prods};
+  render();
+}
+
+/* ============ render ============ */
+function render(){
+  const {H,rows,prods}=RESULT;
+  const short=rows.filter(r=>r.shortage>0);
+  const pieces=short.reduce((a,b)=>a+b.shortage,0);
+  const noRec=rows.filter(r=>!r.known).length;
+  const unmapped=prods.filter(p=>!p.mapped);
+  const soonest=rows.filter(r=>isFinite(r.cover)&&r.known).sort((a,b)=>a.cover-b.cover)[0];
+
+  $("#hVal").innerHTML=H+" <small>month"+(H===1?"":"s")+"</small>";
+  $("#hRange").value=Math.min(60,H);
+  $$("#app .presets button").forEach(b=>b.setAttribute("aria-pressed",String(+b.dataset.m===H)));
+
+  $("#score").innerHTML=
+    '<div><div class="lbl">Pieces missing</div>'+
+      '<div class="v '+(pieces?"short":"ok")+'">'+cnt(pieces)+'</div>'+
+      '<div class="note">to cover '+H+' months</div></div>'+
+    '<div><div class="lbl">Materials short</div>'+
+      '<div class="v '+(short.length?"short":"ok")+'">'+short.length+'<small>/'+rows.length+'</small></div>'+
+      (noRec?'<div class="note watch">'+noRec+' with no stock record</div>':'<div class="note">all have stock records</div>')+'</div>'+
+    '<div><div class="lbl">First to run out</div>'+
+      (soonest?'<div class="v name">'+esc(soonest.name)+'</div><div class="note '+(soonest.cover<H?"short":"")+'">'+mo(soonest.cover)+' months of cover</div>'
+              :'<div class="v name muted">Nothing is being consumed</div>')+'</div>'+
+    '<div><div class="lbl">Products forecast</div>'+
+      '<div class="v">'+(prods.length-unmapped.length)+'<small>/'+prods.length+'</small></div>'+
+      (unmapped.length?'<div class="note watch">'+unmapped.length+' unmatched \u2014 see Matching</div>':'<div class="note">all matched</div>')+'</div>';
+
+  $("#cMat").textContent=rows.length;
+  $("#cProd").textContent=prods.length;
+  $("#cMap").textContent=unmapped.length?unmapped.length+" to fix":"ok";
+
+  renderMats(); renderProds(); renderMap();
+}
+
+function renderMats(){
+  const {H,rows}=RESULT;
+  const q=key($("#matSearch").value);
+  let list=rows.filter(r=>!q||key(r.name).includes(q)||key(r.cat).includes(q));
+  if(matFilter==="short")list=list.filter(r=>r.shortage>0);
+  else if(matFilter!=="all")list=list.filter(r=>key(r.cat)===key(matFilter));
+  const k=sortMat.k;
+  list.sort((a,b)=>{const x=a[k],y=b[k];
+    return typeof x==="string"?sortMat.dir*x.localeCompare(y)
+      :sortMat.dir*((x===Infinity?1e15:x)-(y===Infinity?1e15:y));});
+
+  $("#matNote").textContent=list.length+" shown \u00b7 piece counts";
+  const cols=[["name","Material"],["cat","Type"],["stock","In stock (pcs)"],["burn","Used / month (pcs)"],
+    ["cover","Runway"],["need","Needed, "+H+" mo (pcs)"],["shortage","Missing (pcs)"]];
+  const head='<thead><tr>'+cols.map(c=>'<th data-k="'+c[0]+'" '+
+    (sortMat.k===c[0]?'aria-sort="'+(sortMat.dir<0?"descending":"ascending")+'"':'')+'>'+c[1]+'</th>').join("")+'</tr></thead>';
+
+  const body=list.length?list.map(r=>{
+    const span=H*1.6, pct=Math.max(2,Math.min(100,Math.min(r.cover,span)/span*100)), mark=100/1.6;
+    const open=openRows.has(r.name);
+    const missCell=r.shortage>0
+      ? '<td class="card-miss" data-label="Missing"><span class="miss">'+cnt(r.shortage)+' pcs</span></td>'
+      : '<td class="card-ok" data-label="Missing"><span>enough in stock</span></td>';
+    return '<tr class="row'+(open?" open":"")+'" data-row="'+esc(r.name)+'" tabindex="0">'+
+      '<td><span class="caret">'+(open?"\u25be":"\u25b8")+'</span> '+esc(r.name)+
+        (r.known?"":' <span class="tag t-none">no stock record</span>')+'</td>'+
+      '<td class="muted" style="text-align:left" data-label="Type">'+esc(r.cat)+'</td>'+
+      '<td data-label="In stock">'+cnt(r.stock)+'</td>'+
+      '<td data-label="Used / month" title="'+r.burn.toFixed(2)+' exact">'+cnt(r.burn)+'</td>'+
+      '<td data-label="Runway"><span class="runway" title="'+(isFinite(r.cover)?mo(r.cover)+" months of cover":"not consumed")+'">'+
+            '<i class="r-'+r.status+'" style="width:'+pct+'%"></i><u style="left:'+mark+'%"></u></span>'+
+          '<span class="rw-num '+(r.cover<H?"miss":"muted")+'">'+(isFinite(r.cover)?mo(r.cover)+" mo":"\u2014")+'</span></td>'+
+      '<td data-label="Needed, '+H+' mo">'+cnt(r.need)+'</td>'+
+      missCell+
+    '</tr>'+(open?detailRow(r):"");
+  }).join(""):'<tr><td colspan="7" class="empty"><strong>Nothing missing here</strong>'+
+      'Every material in this view covers the full '+H+' months.</td></tr>';
+  $("#matTable").innerHTML=head+"<tbody>"+body+"</tbody>";
+}
+
+function detailRow(r){
+  const rowsHtml=r.uses.map(u=>'<tr>'+
+      '<td style="text-align:left">'+esc(u.product)+'</td>'+
+      '<td data-label="Units to make">'+up(u.units)+'</td>'+
+      '<td data-label="Pcs per unit">\u00d7 '+u.per+'</td>'+
+      '<td data-label="Pieces needed">'+up(u.sub)+'</td>'+
+      '<td data-label="Pcs / month">'+cnt(u.monthly)+'</td></tr>').join("");
+  return '<tr class="detail"><td colspan="7"><div class="detail-in">'+
+    '<div class="lbl" style="margin-bottom:8px">Consumed by '+r.uses.length+' product'+(r.uses.length===1?"":"s")+'</div>'+
+    '<table><thead><tr><th style="text-align:left">Product</th><th>Units to make</th><th>Pcs per unit</th>'+
+      '<th>Pieces needed</th><th>Pcs / month</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>'+
+  '</div></td></tr>';
+}
+
+function renderProds(){
+  const {H,prods}=RESULT;
+  const q=key($("#prodSearch").value);
+  const list=prods.filter(p=>!q||key(p.name).includes(q)||key(p.code).includes(q)||key(p.brand).includes(q));
+  const k=sortProd.k;
+  list.sort((a,b)=>{const x=a[k]==null?"":a[k],y=b[k]==null?"":b[k];
+    return typeof x==="string"?sortProd.dir*String(x).localeCompare(String(y)):sortProd.dir*(x-y);});
+  $("#prodNote").textContent=list.length+" shown";
+  const cols=[["name","Product"],["brand","Brand"],["avg","Sold / month"],["onHand","Finished on hand"],
+    ["demand","Demand, "+H+" mo"],["produce","Units to produce"],["units","Materials"],["main","Matched recipe"]];
+  $("#prodTable").innerHTML='<thead><tr>'+cols.map(c=>'<th data-k="'+c[0]+'" '+
+      (sortProd.k===c[0]?'aria-sort="'+(sortProd.dir<0?"descending":"ascending")+'"':'')+'>'+c[1]+'</th>').join("")+'</tr></thead><tbody>'+
+    (list.length?list.map(p=>'<tr>'+
+      '<td>'+esc(p.name)+(p.code?'<div class="lbl" style="letter-spacing:.06em">'+esc(p.code)+'</div>':'')+'</td>'+
+      '<td class="muted" style="text-align:left" data-label="Brand">'+esc(p.brand)+'</td>'+
+      '<td data-label="Sold / month">'+mo(p.avg)+'</td>'+
+      '<td data-label="Finished on hand">'+cnt(p.onHand)+'</td>'+
+      '<td data-label="Demand, '+H+' mo">'+up(p.demand)+'</td>'+
+      '<td class="big" data-label="Units to produce">'+up(p.produce)+'</td>'+
+      '<td class="'+(p.units?"muted":"")+'" data-label="Materials">'+(p.units||"\u2014")+'</td>'+
+      '<td style="text-align:left;white-space:normal" class="'+(p.mapped?"muted":"")+'" data-label="Recipe">'+
+        (p.mapped?esc(p.main):'<span class="tag t-watch">no recipe \u2014 not counted</span>')+'</td>'+
+    '</tr>').join(""):'<tr><td colspan="8" class="empty"><strong>No products match that search</strong></td></tr>')
+    +'</tbody>';
+}
+
+function renderMap(){
+  const q=key($("#mapSearch").value);
+  const used=new Set(Object.keys(MATCHES).map(k=>MATCHES[k].main));
+  const list=DATA.products.filter(p=>{
+    if(q&&!key(p.name).includes(q))return false;
+    const c=MATCHES[p.name];
+    if(mapFilter==="none")return !c;
+    if(mapFilter==="check")return !c||c.score<0.9;
+    return true;});
+  $("#mapList").innerHTML=list.length?list.map(p=>{
+    const cur=MATCHES[p.name],sc=cur?cur.score:0;
+    const cls=!cur?"lo":sc>=0.9?"hi":sc>=0.6?"mid":"lo";
+    const opts=DATA.mains.map(m=>'<option value="'+esc(m)+'"'+((cur&&cur.main===m)?" selected":"")+'>'+esc(m)+
+      ((used.has(m)&&(!cur||cur.main!==m))?" \u00b7 already used":"")+'</option>').join("");
+    return '<div class="map-row">'+
+      '<div><div>'+esc(p.name)+'</div><div class="lbl" style="letter-spacing:.06em">'+esc(p.code)+' \u00b7 '+mo(p.avg)+'/mo</div></div>'+
+      '<div class="arrow">\u2192</div>'+
+      '<div><select data-prod="'+esc(p.name)+'" aria-label="Recipe for '+esc(p.name)+'">'+
+        '<option value="">\u2014 no recipe \u2014</option>'+opts+'</select></div>'+
+      '<div class="conf '+cls+'">'+(cur?Math.round(sc*100)+"% match":"unmatched")+'</div>'+
+    '</div>';}).join("")
+    :'<div class="empty"><strong>Nothing in this view</strong>Every product here is matched.</div>';
+
+  const missing=[...new Set(RESULT.rows.filter(r=>!r.known).map(r=>r.name))];
+  $("#missingMats").innerHTML=missing.length
+    ? missing.map(m=>esc(m)).join("<br>")+'<div class="hint" style="margin-top:8px">Counted as zero stock, so their full requirement shows as missing.</div>'
+    : "Every material has a stock record.";
+}
+
+/* ============ export ============ */
+function exportXlsx(){
+  const {H,rows,prods}=RESULT;
+  const wb=XLSX.utils.book_new();
+  const mat=rows.map(r=>{const o={"Material":r.name,"Type":r.cat,"In stock (pcs)":r.stock,
+    "Used per month (pcs)":Math.round(r.burn),"Runway (months)":isFinite(r.cover)?+r.cover.toFixed(1):"",
+    "In production_stock":r.known?"yes":"no"};
+    o["Needed for "+H+" months (pcs)"]=r.need;
+    o["Missing (pcs)"]=r.shortage;
+    return o;}).sort((a,b)=>b["Missing (pcs)"]-a["Missing (pcs)"]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(mat),"materials");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(
+    mat.filter(r=>r["Missing (pcs)"]>0).map(r=>({"Material":r.Material,"Type":r.Type,
+      "Missing (pcs)":r["Missing (pcs)"],"In stock (pcs)":r["In stock (pcs)"]}))),"order list");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(prods.map(p=>{
+    const o={"Product":p.name,"Code":p.code,"Brand":p.brand,"Sold per month":+p.avg.toFixed(2),
+      "Finished on hand":Math.round(p.onHand)};
+    o["Demand over "+H+" months"]=Math.ceil(p.demand);
+    o["Units to produce"]=Math.ceil(p.produce);
+    o["Matched recipe"]=p.main||"NOT MATCHED";
+    return o;})),"production plan");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ["Setting","Value"],["Months planned ahead",H],["Yearly demand growth %",num($("#growth").value)],
+    ["Wastage buffer %",num($("#buffer").value)],["Finished goods subtracted",$("#netoff").value==="1"?"yes":"no"],
+    ["Generated",new Date().toLocaleString()]]),"settings");
+  XLSX.writeFile(wb,"material-plan-"+H+"mo.xlsx");
+}
+
+/* ============ wiring ============ */
+function syncRail(){
+  const r=$(".rail");
+  if(r)document.documentElement.style.setProperty("--railH",
+    (window.getComputedStyle(r).position==="sticky"?r.offsetHeight:0)+"px");
+}
+window.addEventListener("resize",syncRail);
+
+function loadFile(f){
+  $("#errbox").innerHTML="";
+  const rd=new FileReader();
+  rd.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+      start(parseWorkbook(wb),"<b>"+esc(f.name)+"</b>");
+      window.scrollTo(0,0);
+    }catch(err){
+      $("#errbox").innerHTML='<div class="err"><strong>Could not read that file.</strong><br>'+esc(err.message)+'</div>';
+      $("#uploadPanel").classList.remove("hide");
+    }
+  };
+  rd.onerror=()=>{$("#errbox").innerHTML='<div class="err">The file could not be opened. Try saving it again as .xlsx.</div>';};
+  rd.readAsArrayBuffer(f);
+}
+$("#file").addEventListener("change",e=>{if(e.target.files[0])loadFile(e.target.files[0]);});
+const drop=$("#drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("hot");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hot");}));
+drop.addEventListener("drop",e=>{const f=e.dataTransfer.files[0];if(f)loadFile(f);});
+$("#reload").addEventListener("click",()=>{
+  $("#uploadPanel").classList.remove("hide");$("#app").classList.add("hide");
+  $("#file").value="";$("#stamp").textContent="No file loaded";window.scrollTo(0,0);});
+
+function setMonths(v){
+  v=Math.max(1,Math.min(120,Math.round(v)||24));
+  $("#months").value=v;
+  if(DATA)compute();
+}
+$("#hRange").addEventListener("input",e=>setMonths(+e.target.value));
+$("#months").addEventListener("input",e=>setMonths(+e.target.value));
+$$("#app .presets button").forEach(b=>b.addEventListener("click",()=>setMonths(+b.dataset.m)));
+["#growth","#buffer","#netoff"].forEach(s=>$(s).addEventListener("input",()=>{if(DATA)compute();}));
+$("#assumpBtn").addEventListener("click",e=>{
+  const open=$("#drawer").classList.toggle("hide")===false;
+  e.currentTarget.setAttribute("aria-expanded",String(open));
+  e.currentTarget.setAttribute("aria-pressed",String(open));
+  syncRail();});
+$("#exportBtn").addEventListener("click",exportXlsx);
+
+$$("#tabs button").forEach(b=>b.addEventListener("click",()=>{
+  $$("#tabs button").forEach(x=>x.setAttribute("aria-selected",String(x===b)));
+  ["mat","prod","map"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==b.dataset.tab));}));
+
+$$("#matFilters button").forEach(b=>b.addEventListener("click",()=>{
+  matFilter=b.dataset.f;
+  $$("#matFilters button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+  renderMats();}));
+$$("#mapFilters button").forEach(b=>b.addEventListener("click",()=>{
+  mapFilter=b.dataset.f;
+  $$("#mapFilters button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+  renderMap();}));
+$("#matSearch").addEventListener("input",renderMats);
+$("#prodSearch").addEventListener("input",renderProds);
+$("#mapSearch").addEventListener("input",renderMap);
+$("#matSort").addEventListener("change",e=>{
+  sortMat={k:e.target.value,dir:e.target.value==="name"||e.target.value==="cover"||e.target.value==="stock"?1:-1};
+  renderMats();});
+$("#prodSort").addEventListener("change",e=>{
+  sortProd={k:e.target.value,dir:e.target.value==="name"?1:-1};
+  renderProds();});
+
+function toggleRow(name){openRows.has(name)?openRows.delete(name):openRows.add(name);renderMats();}
+document.addEventListener("click",e=>{
+  const th=e.target.closest("th[data-k]");
+  if(th&&!th.closest(".detail-in")){
+    const inMat=!!th.closest("#matTable"),k=th.dataset.k;
+    const st=inMat?sortMat:sortProd;
+    const txt=["name","cat","brand","main"].indexOf(k)>=0;
+    if(st.k===k)st.dir=-st.dir; else {st.k=k;st.dir=txt?1:-1;}
+    inMat?renderMats():renderProds();
+    return;
+  }
+  const row=e.target.closest("tr.row[data-row]");
+  if(row)toggleRow(row.dataset.row);
+});
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Enter"&&e.key!==" ")return;
+  const row=e.target.closest?e.target.closest("tr.row[data-row]"):null;
+  if(row){e.preventDefault();toggleRow(row.dataset.row);}
+});
+document.addEventListener("change",e=>{
+  const sel=e.target.closest("select[data-prod]");if(!sel)return;
+  const prod=sel.dataset.prod,val=sel.value;
+  if(val){for(const k of Object.keys(MATCHES))if(k!==prod&&MATCHES[k].main===val)delete MATCHES[k];
+          MATCHES[prod]={main:val,score:1};}
+  else delete MATCHES[prod];
+  compute();
+});
+
+/* ============ boot ============ */
+if(EMBEDDED){
+  start(build(EMBEDDED.stock,EMBEDDED.assign,EMBEDDED.products),"<b>Built-in data</b>");
+}else{
+  $("#stamp").textContent="No data loaded";
+  $("#uploadPanel").classList.remove("hide");
+}
+</script>
+</body>
+</html>
